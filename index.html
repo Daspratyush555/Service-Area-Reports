@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Service Area Report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --green:      #00A651;
+  --dgreen:     #007A3D;
+  --lgreen:     #E6F4ED;
+  --mgreen:     #B3DECA;
+  --g900:       #1a1a2e;
+  --g800:       #2d2d44;
+  --g700:       #3d3d5c;
+  --g600:       #595972;
+  --g200:       #e8e8f0;
+  --g100:       #f5f5fa;
+  --white:      #ffffff;
+  --red:        #e53e3e;
+  --orange:     #ed8936;
+  --blue:       #3182ce;
+  --shadow:     0 2px 12px rgba(0,0,0,0.08);
+  --radius:     10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--g100);color:var(--g900);font-size:13px}
+
+/* ── Upload in header ── */
+#file-input{display:none}
+.upload-progress-bar{height:3px;background:rgba(255,255,255,.25);border-radius:2px;overflow:hidden;margin-top:5px;display:none;width:160px}
+.upload-progress-fill{height:100%;background:white;border-radius:2px;transition:width .4s;width:0%}
+.upload-status{font-size:10px;color:rgba(255,255,255,.75);margin-top:2px;display:none;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ── Empty state ── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--g600);text-align:center}
+.empty-state .empty-icon{font-size:48px;margin-bottom:16px;opacity:.4}
+.empty-state h3{font-size:15px;font-weight:700;color:var(--g700);margin-bottom:6px}
+.empty-state p{font-size:12px;line-height:1.6;max-width:300px}
+
+/* ── Main Dashboard (hidden until data loaded) ── */
+#dashboard{display:block}
+
+/* ── Deloitte Brand Bar ── */
+.brand-bar{background:#000;padding:8px 28px;display:flex;align-items:center;gap:10px}
+.brand-wordmark{display:flex;align-items:center;gap:0}
+.brand-wordmark span{color:white;font-size:17px;font-weight:400;letter-spacing:-.3px;font-family:"Arial",sans-serif}
+.brand-dot{width:9px;height:9px;border-radius:50%;background:var(--green);margin-left:1px;flex-shrink:0}
+/* ── Header ── */
+.header{background:linear-gradient(135deg,var(--dgreen) 0%,var(--green) 100%);color:white;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.15);flex-wrap:wrap;gap:10px}
+.header-left h1{font-size:20px;font-weight:800;letter-spacing:-.3px}
+.header-left p{font-size:11px;opacity:.75;margin-top:2px}
+.header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* ── Save banner ── */
+.save-banner{background:rgba(0,0,0,.25);border-top:1px solid rgba(255,255,255,.12);padding:5px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.save-banner-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.save-ts{font-size:10px;color:rgba(255,255,255,.5)}
+.unsaved-dot{width:7px;height:7px;border-radius:50%;background:#d29922;display:inline-block;margin-right:2px;animation:pulse .8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.sync-status{font-size:10px;font-weight:500;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,.6)}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);flex-shrink:0}
+.sync-dot.ok{background:#3fb950}.sync-dot.saving{background:#d29922;animation:pulse .8s infinite}.sync-dot.err{background:#f85149}
+.saved-by{font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:5px}
+.saved-by-avatar{width:15px;height:15px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:#fff;flex-shrink:0}
+/* ── User identity modal ── */
+/* user modal removed */
+/* ── Activity log modal ── */
+.act-modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:center;justify-content:center}
+.act-modal-ov.open{display:flex}
+.act-modal-box{background:white;border-radius:12px;padding:22px 24px;width:480px;max-width:94vw;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.act-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--g200)}
+.act-item:last-child{border-bottom:none}
+.act-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;flex-shrink:0;margin-top:2px}
+.act-author{font-weight:600;font-size:12px;color:var(--g900)}
+.act-time{font-size:10px;color:var(--g600);margin-top:2px}
+.act-filters{font-size:10px;color:var(--g600);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px}
+/* ── Shared buttons ── */
+.save-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:white;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:background .15s;white-space:nowrap}
+.save-btn:hover{background:rgba(255,255,255,.28)}
+.save-btn.primary{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.5)}
+/* ── User avatar ── */
+/* user avatar removed */
+.badge{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:600}
+.reload-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s}
+.reload-btn:hover{background:rgba(255,255,255,.3)}
+
+/* ── Control Bar ── */
+.control-bar{background:white;border-bottom:1px solid var(--g200);padding:10px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.ctrl-group{display:flex;align-items:center;gap:8px}
+.ctrl-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--g600);white-space:nowrap}
+.ctrl-select{border:1px solid var(--g200);border-radius:7px;padding:6px 28px 6px 10px;font-size:12px;background:white;color:var(--g900);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23595972' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;min-width:200px}
+.ctrl-select:focus{outline:none;border-color:var(--green)}
+/* ── Multi-select dropdown ── */
+.ms-wrap{position:relative;min-width:240px}
+.ms-trigger{border:1px solid var(--g200);border-radius:7px;padding:6px 32px 6px 10px;font-size:12px;background:white;color:var(--g900);cursor:pointer;display:flex;align-items:center;gap:6px;min-width:240px;position:relative;user-select:none}
+.ms-trigger::after{content:"";position:absolute;right:10px;top:50%;transform:translateY(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid var(--g600)}
+.ms-trigger.open::after{border-top:none;border-bottom:5px solid var(--g600)}
+.ms-tag{background:var(--lgreen);color:var(--dgreen);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap}
+.ms-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;background:white;border:1px solid var(--g200);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:999;min-width:240px;max-height:280px;overflow-y:auto}
+.ms-dropdown.open{display:block}
+.ms-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:12px;transition:background .1s}
+.ms-item:hover{background:var(--lgreen)}
+.ms-item input[type=checkbox]{accent-color:var(--green);width:14px;height:14px;cursor:pointer}
+.ms-item label{cursor:pointer;flex:1}
+.ms-actions{display:flex;gap:0;border-top:1px solid var(--g200)}
+.ms-action-btn{flex:1;padding:7px;font-size:11px;font-weight:700;border:none;background:var(--g100);color:var(--g600);cursor:pointer;transition:background .1s}
+.ms-action-btn:hover{background:var(--lgreen);color:var(--dgreen)}
+.ms-action-btn:first-child{border-right:1px solid var(--g200)}
+.toggle-group{display:flex;border:1px solid var(--g200);border-radius:8px;overflow:hidden}
+.toggle-btn{padding:6px 14px;font-size:11px;font-weight:700;border:none;background:white;color:var(--g600);cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.toggle-btn.active{background:var(--green);color:white}
+.toggle-btn:not(:last-child){border-right:1px solid var(--g200)}
+.divider{width:1px;height:24px;background:var(--g200)}
+
+/* ── Tabs ── */
+.tabs{background:var(--g800);display:flex;padding:0 24px;gap:2px;overflow-x:auto}
+.tab{padding:11px 18px;color:rgba(255,255,255,.55);cursor:pointer;font-size:12px;font-weight:600;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;letter-spacing:.2px}
+.tab:hover{color:white;background:rgba(255,255,255,.05)}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+
+/* ── Pages ── */
+.page{display:none;padding:22px 26px}
+.page.active{display:block}
+
+/* ── KPIs ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:13px;margin-bottom:20px}
+.kpi{background:white;border-radius:var(--radius);padding:15px 17px;box-shadow:var(--shadow);border-top:3px solid var(--green);transition:transform .15s}
+.kpi:hover{transform:translateY(-2px)}
+.kpi.neg{border-top-color:var(--red)}
+.kpi.blue{border-top-color:var(--blue)}
+.kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--g600);margin-bottom:5px}
+.kpi-value{font-size:22px;font-weight:800;color:var(--g900);line-height:1}
+.kpi-value.neg{color:var(--red)}
+.kpi-value.pos{color:var(--dgreen)}
+.kpi-sub{font-size:11px;margin-top:4px;color:var(--g600)}
+
+/* ── Cards ── */
+.card{background:white;border-radius:var(--radius);padding:17px 19px;box-shadow:var(--shadow)}
+.card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--g600);margin-bottom:13px;display:flex;align-items:center;gap:6px}
+.card-title::before{content:"";display:inline-block;width:3px;height:13px;background:var(--green);border-radius:2px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px}
+.full-col{margin-bottom:15px}
+@media(max-width:900px){.two-col{grid-template-columns:1fr}}
+
+/* ── Charts ── */
+.chart-wrap{position:relative;width:100%}
+.chart-wrap canvas{max-height:280px}
+.chart-wrap.tall canvas{max-height:340px}
+.chart-wrap.short canvas{max-height:200px}
+
+/* ── Tables ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead tr{background:var(--g800);color:white}
+thead th{padding:9px 11px;text-align:right;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+thead th:first-child{text-align:left}
+tbody tr{border-bottom:1px solid var(--g200);transition:background .1s}
+tbody tr:hover{background:var(--lgreen)}
+tbody tr:nth-child(even){background:var(--g100)}
+tbody tr:nth-child(even):hover{background:var(--lgreen)}
+td{padding:7px 11px}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.neg{color:var(--red);font-weight:700}
+td.pos{color:var(--dgreen);font-weight:700}
+.grand-total td{background:var(--g800)!important;color:white;font-weight:700}
+.grand-total td.neg-g{color:#ffaaaa!important}
+.grand-total td.pos-g{color:#90ee90!important}
+.subtotal td{background:var(--lgreen)!important;font-weight:700}
+.indent td:first-child{padding-left:26px}
+
+/* ── Progress bars ── */
+.prg-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.prg-lbl{min-width:145px;font-size:11px;color:var(--g800);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prg-bg{flex:1;height:8px;background:var(--g200);border-radius:4px;overflow:hidden}
+.prg-fg{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--green),var(--dgreen))}
+.prg-fg.neg{background:linear-gradient(90deg,#e53e3e,#c53030)}
+.prg-val{min-width:68px;text-align:right;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* ── Legend ── */
+.legend{display:flex;gap:14px;margin-bottom:9px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--g600);font-weight:600}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+
+/* ── Variance toggle arrow ── */
+.ag-toggle{display:inline-block;margin-right:6px;font-size:10px;color:var(--g600);transition:transform .2s;user-select:none}
+/* ── FTE pivot table sticky region rows ── */
+#fte-pivot-table thead th{background:var(--g800);position:sticky;top:0;z-index:2}
+/* ── Commentary cell ── */
+td[contenteditable="true"]:hover{background:var(--lgreen)!important}
+td[contenteditable="true"]:focus{background:#fffde7!important;border-bottom:1px solid var(--green)!important;box-shadow:inset 0 -2px 0 var(--green)}
+/* ── Footer ── */
+.footer{background:var(--g800);color:rgba(255,255,255,.4);text-align:center;padding:11px;font-size:11px;margin-top:30px}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:60px 20px;color:var(--g600)}
+.empty h3{font-size:16px;margin-bottom:8px;color:var(--g700)}
+.empty p{font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- file input (hidden, triggered from header button) -->
+<input type="file" id="file-input" accept=".xlsx,.xls">
+
+<!-- ════════════════════════════════ DASHBOARD ════════════════════════════ -->
+<div id="dashboard">
+
+  <!-- Deloitte Brand Bar -->
+  <div class="brand-bar">
+    <div class="brand-wordmark">
+      <span>Deloitte</span><div class="brand-dot"></div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Service Area Report</h1>
+      <p id="header-sub">No data loaded — upload an Excel file or load a saved snapshot</p>
+    </div>
+    <div class="header-right">
+      <span class="badge" id="badge-period" style="display:none">P13</span>
+      <span class="badge" id="badge-fy" style="display:none">FY26</span>
+      <div class="sync-status"><div class="sync-dot" id="sync-dot"></div><span id="sync-txt">Loading…</span></div>
+
+      <button class="save-btn primary" onclick="saveAllShared()" title="Save & share dashboard">💾 Save Dashboard</button>
+      <button class="save-btn" onclick="showActivityLog()" title="View save history">📋 History</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-end">
+        <button class="reload-btn" onclick="document.getElementById('file-input').click()" id="upload-btn">↑ Upload Excel File</button>
+        <div class="upload-progress-bar" id="prog-bar"><div class="upload-progress-fill" id="prog-fill"></div></div>
+        <div class="upload-status" id="prog-label">Reading file…</div>
+      </div>
+    </div>
+  </div>
+  <!-- Save banner (sits inside header block, below the main header row) -->
+  <div class="save-banner">
+    <div class="save-banner-left">
+      <span class="unsaved-dot" id="unsaved-dot" style="display:none" title="Unsaved changes"></span>
+      <span class="save-ts" id="save-ts"></span>
+      <span id="saved-by-display" class="saved-by" style="display:none"></span>
+    </div>
+    <button class="save-btn" onclick="refreshFromShared()" style="font-size:10px;padding:3px 9px">↺ Refresh</button>
+  </div>
+
+  <!-- Control Bar: Currency Toggle + Service Area Filter -->
+  <div class="control-bar">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Display</span>
+      <div class="toggle-group">
+        <button class="toggle-btn" onclick="setCurrency('M')">$ Millions</button>
+        <button class="toggle-btn active" onclick="setCurrency('K')">$ Thousands</button>
+        <button class="toggle-btn" onclick="setCurrency('A')">$ Absolute</button>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="ctrl-group" id="sa-filter-group">
+      <span class="ctrl-label">Service Area</span>
+      <div class="ms-wrap" id="ms-wrap">
+        <div class="ms-trigger" id="ms-trigger" onclick="toggleMSDropdown()">
+          <span id="ms-label">All Service Areas</span>
+        </div>
+        <div class="ms-dropdown" id="ms-dropdown">
+          <div id="ms-items"></div>
+          <div class="ms-actions">
+            <button class="ms-action-btn" onclick="msSelectAll()">Select All</button>
+            <button class="ms-action-btn" onclick="msClearAll()">Clear All</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('summary',this)">Executive Summary</div>
+    <div class="tab" onclick="showTab('service-lines',this)">Service Lines</div>
+    <div class="tab" onclick="showTab('account-groups',this)">Account Groups</div>
+    <div class="tab" onclick="showTab('fte',this)">FTE Headcount</div>
+    <div class="tab" onclick="showTab('variance',this)">Variance Analysis</div>
+  </div>
+
+  <!-- PAGE: EXECUTIVE SUMMARY -->
+  <div id="page-summary" class="page active">
+    <div class="kpi-grid" id="kpi-grid"></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Period Trend — Actual vs Plan vs Forecast (Gross)</div>
+        <div class="legend">
+          <span class="legend-item"><span class="dot" style="background:#00A651"></span>Actual</span>
+          <span class="legend-item"><span class="dot" style="background:#3182ce"></span>Plan</span>
+          <span class="legend-item"><span class="dot" style="background:#ed8936"></span>Forecast</span>
+        </div>
+        <div class="chart-wrap tall"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Actual by WBS Type</div>
+        <div class="chart-wrap"><canvas id="wbsDonut"></canvas></div>
+        <div class="card-title" style="margin-top:18px">Actual by Region</div>
+        <div class="chart-wrap short"><canvas id="regionDonut"></canvas></div>
+      </div>
+    </div>
+    <div class="full-col card">
+      <div class="card-title">Account Group View</div>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th style="text-align:left">Account Group</th>
+        <th>Annual Plan Costs</th><th>Annual Forecast</th><th>YTD Plan</th>
+        <th>YTD Forecast</th><th>YTD Actual</th><th>Var to Plan</th><th>Var to Forecast</th>
+      </tr></thead><tbody id="ag-tbody"></tbody></table></div>
+    </div>
+    <div class="full-col card">
+      <div class="card-title">WBS Type View</div>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th style="text-align:left">WBS Type</th>
+        <th>Annual Plan Costs</th><th>Annual Forecast</th><th>YTD Plan</th>
+        <th>YTD Forecast</th><th>YTD Actual</th><th>Var to Plan</th><th>Var to Forecast</th>
+      </tr></thead><tbody id="wbs-tbody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- PAGE: SERVICE LINES -->
+  <div id="page-service-lines" class="page">
+    <div class="full-col card">
+      <div class="card-title">Service Line Financial Summary — YTD</div>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th style="text-align:left">Service Line</th>
+        <th>Annual Plan Costs</th><th>Annual Forecast</th><th>YTD Plan</th>
+        <th>YTD Forecast</th><th>YTD Actual</th><th>Var to Plan</th><th>Var to Forecast</th>
+      </tr></thead><tbody id="sl-tbody"></tbody></table></div>
+    </div>
+    <div class="full-col card">
+      <div class="card-title">Top Service Lines by YTD Actual</div>
+      <div class="chart-wrap tall"><canvas id="slBarChart" style="max-height:380px"></canvas></div>
+    </div>
+  </div>
+
+  <!-- PAGE: ACCOUNT GROUPS -->
+  <div id="page-account-groups" class="page">
+    <div class="full-col card">
+      <div class="card-title">Account Group — Actual vs Plan</div>
+      <div class="chart-wrap tall"><canvas id="acctChart"></canvas></div>
+    </div>
+    <div class="full-col card">
+      <div class="card-title">Account Group Spend Distribution</div>
+      <div id="acct-progress"></div>
+    </div>
+  </div>
+
+  <!-- PAGE: FTE (PxE only) -->
+  <div id="page-fte" class="page">
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:12px;color:#856404">
+      ℹ️ FTE data is shown for <strong>PxE Service Area only</strong>, regardless of the Service Area filter above.
+    </div>
+    <div class="kpi-grid" id="fte-kpi-grid"></div>
+    <div class="full-col card">
+      <div class="card-title">FTE Summary by Region &amp; Job Level ID — All Periods</div>
+      <div class="tbl-wrap" style="max-height:520px;overflow-y:auto">
+        <table id="fte-pivot-table">
+          <thead id="fte-pivot-head"></thead>
+          <tbody id="fte-pivot-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="full-col card">
+      <div class="card-title">Total FTE Trend — P1 to P13</div>
+      <div class="legend">
+        <span class="legend-item"><span class="dot" style="background:#3182ce"></span>Total</span>
+        <span class="legend-item"><span class="dot" style="background:#00A651"></span>US</span>
+        <span class="legend-item"><span class="dot" style="background:#ed8936"></span>USI</span>
+      </div>
+      <div class="chart-wrap"><canvas id="fteTrendChart"></canvas></div>
+    </div>
+    <div class="full-col card">
+      <div class="card-title">FTE by Service Line (P13)</div>
+      <div class="chart-wrap" style="position:relative"><canvas id="fteSlChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- PAGE: VARIANCE -->
+  <div id="page-variance" class="page">
+    <div class="full-col card">
+      <div class="card-title">Variance Analysis — Account Group &amp; Subgroup Breakup</div>
+      <div class="tbl-wrap" style="max-height:680px;overflow-y:auto">
+        <table id="var-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;min-width:220px">Account Group / Subgroup</th>
+              <th>YTD Actual</th>
+              <th>YTD Plan</th>
+              <th>Act vs Plan ($)</th>
+              <th>Act vs Plan (%)</th>
+              <th style="min-width:300px;text-align:left">Variance Commentary</th>
+            </tr>
+          </thead>
+          <tbody id="var-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">Service Area Report · Confidential — Internal Use Only · <span id="footer-info"></span></div>
+
+<!-- User identity modal -->
+
+
+<!-- Activity log modal -->
+<div class="act-modal-ov" id="act-modal-ov" onclick="if(event.target===this)closeActivityLog()">
+  <div class="act-modal-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="font-size:15px;font-weight:800;color:var(--dgreen)">📋 Save History</h3>
+      <button onclick="closeActivityLog()" style="background:none;border:1px solid var(--g200);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;color:var(--g600)">✕ Close</button>
+    </div>
+    <div id="act-log-content"><div style="text-align:center;padding:30px;color:var(--g600);font-size:12px">Loading…</div></div>
+  </div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let ALL_ROWS = [];      // raw ITS rows
+let FTE_ROWS = [];      // raw FTE rows (PxE only)
+let CURRENCY = 'K';    // M | K | A
+let CHARTS = {};
+let FILE_META = { name: '', fy: '', period: '' };
+let VAR_COMMENTARY = {}; // { accountGroup: 'commentary text' } — parsed from Excel or editable
+
+// ═══════════════════════════════════════════════════════════════
+// FILE UPLOAD & PARSING
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('file-input').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const progBar = document.getElementById('prog-bar');
+  const fill = document.getElementById('prog-fill');
+  const lbl  = document.getElementById('prog-label');
+  progBar.style.display = 'block';
+  lbl.style.display = 'block';
+  lbl.textContent = 'Reading file…';
+  fill.style.width = '20%';
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    fill.style.width = '50%';
+    lbl.textContent = 'Parsing workbook…';
+    setTimeout(() => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: 'array' });
+        fill.style.width = '70%';
+        lbl.textContent = 'Processing ITS data…';
+
+        ALL_ROWS = parseITS(wb);
+        fill.style.width = '85%';
+        lbl.textContent = 'Processing FTE data…';
+
+        FTE_ROWS = parseFTE(wb);
+        VAR_COMMENTARY = parseVarCommentary(wb);
+        fill.style.width = '95%';
+        lbl.textContent = 'Building dashboard…';
+
+        // Extract FY/period from filename
+        const m = f.name.match(/FY(\d+)[_\s]?P(\d+)/i);
+        FILE_META = {
+          name: f.name,
+          fy: m ? 'FY' + m[1] : 'FY26',
+          period: m ? 'P' + m[2] : 'P13'
+        };
+
+        populateSAFilter();
+        setTimeout(() => {
+          fill.style.width = '100%';
+          lbl.textContent = 'Done!';
+          updateHeaderMeta();
+          // Show FY/period badges, hide progress
+          document.getElementById('badge-period').style.display = '';
+          document.getElementById('badge-fy').style.display = '';
+          document.getElementById('prog-bar').style.display = 'none';
+          document.getElementById('prog-fill').style.width = '0%';
+          lbl.style.display = 'none';
+          document.getElementById('upload-btn').textContent = '↑ Load New File';
+          renderAll();
+        }, 300);
+      } catch(err) {
+        lbl.textContent = 'Error: ' + err.message;
+        fill.style.background = '#e53e3e';
+        console.error(err);
+      }
+    }, 50);
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+function parseITS(wb) {
+  const ws = wb.Sheets['ITS Report Data'];
+  if (!ws) throw new Error("Sheet 'ITS Report Data' not found");
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  // Find header row
+  let hdrIdx = -1;
+  for (let i = 0; i < Math.min(raw.length, 10); i++) {
+    if (raw[i] && String(raw[i][0] || '').startsWith('Division')) { hdrIdx = i; break; }
+  }
+  if (hdrIdx < 0) throw new Error("Could not find header row in ITS Report Data");
+
+  const hdrs = raw[hdrIdx].map(h => String(h || '').trim());
+  const col = n => hdrs.indexOf(n);
+
+  // Map column names (flexible)
+  const C = {
+    Division:        col('Division'),
+    DivisionCode:    col('Division Code'),
+    Product:         col('Product'),
+    ProductFamily:   col('Product Family'),
+    ProgramName:     col('Program Name'),
+    Portfolio:       col('Portfolio'),
+    WBSType:         col('WBS Type'),
+    Account:         col('Account'),
+    CostCenter:      col('Cost Center'),
+    AcctSubgroup:    col('Account Subgroup'),
+    FiscalPeriod:    col('Fiscal Period'),
+    ServiceLine:     col('Service Line'),
+    SubSL:           col('Sub Service Line Text') >= 0 ? col('Sub Service Line Text') : col('Sub SL'),
+    CCID:            col('Costcenter ID'),
+    Region:          col('US/USI/Others') >= 0 ? col('US/USI/Others') : col('Region'),
+    AcctGroup:       col('Account Group'),
+    ServiceArea:     col('Service Area'),
+    TotalCosts:      col('Total Costs'),
+    AnnualFcst:      col('Total Annual Forecast'),
+    PlanCosts:       col('Total Plan Costs'),
+    AnnualPlan:      col('Total Annual Plan Costs'),
+    YTDFcst:         col('YTD Forecast'),
+    VarPlan:         col('Var to Plan'),
+    VarFcst:         col('Var to Forecast'),
+    GrossRecov:      col('Gross/Recovery'),
+    DTMF:            col('DT/MF'),
+  };
+
+  const rows = [];
+  for (let i = hdrIdx + 1; i < raw.length; i++) {
+    const r = raw[i];
+    if (!r || !r[C.Division]) continue;
+    const period = parseInt(r[C.FiscalPeriod]) || 0;
+    if (period < 1 || period > 13) continue;
+    const num = k => { const v = r[C[k]]; return typeof v === 'number' ? v : (parseFloat(v) || 0); };
+    rows.push({
+      Division: str(r[C.Division]),
+      WBSType:  str(r[C.WBSType]),
+      Account:  str(r[C.Account]),
+      AcctGroup: str(r[C.AcctGroup]),
+      AcctSubgroup: str(r[C.AcctSubgroup]),
+      CostCenter: str(r[C.CostCenter]),
+      FiscalPeriod: period,
+      ServiceLine:  str(r[C.ServiceLine]),
+      Region:       str(r[C.Region]),
+      ServiceArea:  str(r[C.ServiceArea]),
+      Portfolio:    str(r[C.Portfolio]),
+      GrossRecov:   str(r[C.GrossRecov]),
+      DTMF:         str(r[C.DTMF]),
+      TotalCosts:   num('TotalCosts'),
+      AnnualFcst:   num('AnnualFcst'),
+      PlanCosts:    num('PlanCosts'),
+      AnnualPlan:   num('AnnualPlan'),
+      YTDFcst:      num('YTDFcst'),
+      VarPlan:      num('VarPlan'),
+      VarFcst:      num('VarFcst'),
+    });
+  }
+  return rows;
+}
+
+function parseFTE(wb) {
+  const ws = wb.Sheets['FTE Data'];
+  if (!ws) return [];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  let hdrIdx = -1;
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] && raw[i][1] === 'Service Line' && raw[i].some(c => String(c||'').match(/^P\d+$/))) {
+      hdrIdx = i; break;
+    }
+  }
+  if (hdrIdx < 0) return [];
+
+  const hdrs = raw[hdrIdx];
+  const periodCols = {};
+  hdrs.forEach((h, j) => { if (h && String(h).match(/^P(\d+)$/)) periodCols[j] = parseInt(h.slice(1)); });
+
+  const rows = [];
+  for (let i = hdrIdx + 1; i < raw.length; i++) {
+    const r = raw[i];
+    const sl = r && r[1];
+    if (!sl || String(sl).trim() === '') continue;
+    const region = str(r[2]);
+    const employee = str(r[8]);
+    const jobLvl = str(r[9]);
+    const status = str(r[5]);
+    for (const [j, p] of Object.entries(periodCols)) {
+      const v = parseFloat(r[j]) || 0;
+      if (v !== 0) rows.push({ ServiceLine: String(sl).trim(), Region: region, Employee: employee, JobLevel: jobLvl, HiringStatus: status, Period: p, FTE: v });
+    }
+  }
+  return rows;
+}
+
+function str(v) { return v == null ? '' : String(v).trim(); }
+
+// Parse variance commentary from Excel
+// Looks for sheets containing 'Template', 'Variance', 'Commentary', or 'YTD'
+// Expected columns: Account Group, Account Subgroup, Service Area, Variance to Plan Commentary
+// Key structure: "AcctGroup|AcctSubgroup|ServiceArea" -> commentary text
+// Also stores "AcctGroup|AcctSubgroup" and "AcctGroup" as fallback keys
+function parseVarCommentary(wb) {
+  const commentary = {};
+  // Search all sheets for variance commentary data
+  const candidateSheets = Object.keys(wb.Sheets).filter(n => {
+    const nl = n.toLowerCase();
+    return nl.includes('template') || nl.includes('variance') || nl.includes('commentary') || nl.includes('ytd');
+  });
+  // Also check ALL sheets as fallback
+  const sheetsToCheck = candidateSheets.length > 0 ? candidateSheets : Object.keys(wb.Sheets);
+
+  for (const sheetName of sheetsToCheck) {
+    const ws = wb.Sheets[sheetName];
+    if (!ws) continue;
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    if (!raw || raw.length < 2) continue;
+
+    // Find header row — look for row containing both 'Account Group' and commentary-like column
+    let hdrIdx = -1, cols = {};
+    for (let i = 0; i < Math.min(raw.length, 15); i++) {
+      const row = raw[i];
+      if (!row) continue;
+      const rowStr = row.map(c => String(c||'').toLowerCase());
+      const hasAG   = rowStr.some(c => c.includes('account group'));
+      const hasCom  = rowStr.some(c => c.includes('comment') || c.includes('textual') || c.includes('narrative'));
+      if (hasAG && hasCom) {
+        hdrIdx = i;
+        row.forEach((h, j) => {
+          const hl = String(h||'').toLowerCase().trim();
+          if (hl.includes('account group') && !hl.includes('sub')) cols.ag = j;
+          if (hl.includes('subgroup') || hl.includes('sub group'))  cols.sg = j;
+          if (hl.includes('service area'))                           cols.sa = j;
+          if (hl.includes('comment') || hl.includes('textual') || hl.includes('narrative')) cols.cmt = j;
+        });
+        break;
+      }
+    }
+    if (hdrIdx < 0 || cols.cmt === undefined) continue;
+
+    // Parse data rows
+    for (let i = hdrIdx + 1; i < raw.length; i++) {
+      const row = raw[i];
+      if (!row) continue;
+      const ag  = String(row[cols.ag]  || '').trim();
+      const sg  = cols.sg !== undefined ? String(row[cols.sg] || '').trim() : '';
+      const sa  = cols.sa !== undefined ? String(row[cols.sa] || '').trim() : '';
+      const cmt = String(row[cols.cmt] || '').trim();
+      if (!ag || !cmt) continue;
+      // Store with multiple key granularities for lookup
+      const fullKey  = `${ag}|${sg}|${sa}`;
+      const sgKey    = `${ag}|${sg}`;
+      const agKey    = ag;
+      commentary[fullKey] = cmt;
+      if (!commentary[sgKey])  commentary[sgKey] = cmt;
+      if (!commentary[agKey])  commentary[agKey] = cmt;
+    }
+    if (Object.keys(commentary).length > 0) break; // found data, stop searching
+  }
+  return commentary;
+}
+
+// Helper to look up commentary with fallback chain:
+// Full key (AG|SG|SA) -> Subgroup key (AG|SG) -> Account Group key (AG)
+// Returns current SA filter as string for commentary lookup
+function SA_FILTER_STR() {
+  if (!SA_SELECTED || SA_SELECTED.has('ALL') || SA_SELECTED.size === 0) return '';
+  const arr = [...SA_SELECTED];
+  return arr.length === 1 ? arr[0] : '';
+}
+
+function getCommentary(ag, sg, sa) {
+  if (!VAR_COMMENTARY) return '';
+  return VAR_COMMENTARY[`${ag}|${sg}|${sa}`]
+      || VAR_COMMENTARY[`${ag}|${sg}`]
+      || VAR_COMMENTARY[ag]
+      || '';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SERVICE AREA FILTER
+// ═══════════════════════════════════════════════════════════════
+// ── Multi-select state ──
+let SA_SELECTED = new Set(['ALL']); // 'ALL' means all selected
+
+function populateSAFilter() {
+  const areas = [...new Set(ALL_ROWS.map(r => r.ServiceArea).filter(Boolean))].sort();
+  const container = document.getElementById('ms-items');
+  container.innerHTML = '';
+  // "All" checkbox
+  const allItem = document.createElement('div');
+  allItem.className = 'ms-item';
+  allItem.innerHTML = `<input type="checkbox" id="ms-all" checked onchange="msToggleAll(this)"><label for="ms-all"><strong>All Service Areas</strong></label>`;
+  container.appendChild(allItem);
+  // Individual areas
+  areas.forEach(a => {
+    const div = document.createElement('div');
+    div.className = 'ms-item';
+    const id = 'ms-' + a.replace(/\s+/g,'_');
+    div.innerHTML = `<input type="checkbox" id="${id}" value="${a}" checked onchange="msToggleItem(this)"><label for="${id}">${a}</label>`;
+    container.appendChild(div);
+  });
+  SA_SELECTED = new Set(['ALL']);
+  updateMSLabel();
+}
+
+function toggleMSDropdown() {
+  document.getElementById('ms-trigger').classList.toggle('open');
+  document.getElementById('ms-dropdown').classList.toggle('open');
+}
+
+function msToggleAll(cb) {
+  const checkboxes = document.querySelectorAll('#ms-items input[type=checkbox]:not(#ms-all)');
+  checkboxes.forEach(c => c.checked = cb.checked);
+  SA_SELECTED = cb.checked ? new Set(['ALL']) : new Set();
+  updateMSLabel();
+  updateHeaderMeta();
+  renderAll();
+}
+
+function msToggleItem(cb) {
+  const allCheckboxes = document.querySelectorAll('#ms-items input[type=checkbox]:not(#ms-all)');
+  const checked = [...allCheckboxes].filter(c => c.checked).map(c => c.value);
+  const allCb = document.getElementById('ms-all');
+  if (checked.length === allCheckboxes.length) {
+    allCb.checked = true;
+    allCb.indeterminate = false;
+    SA_SELECTED = new Set(['ALL']);
+  } else if (checked.length === 0) {
+    allCb.checked = false;
+    allCb.indeterminate = false;
+    SA_SELECTED = new Set();
+  } else {
+    allCb.checked = false;
+    allCb.indeterminate = true;
+    SA_SELECTED = new Set(checked);
+  }
+  updateMSLabel();
+  updateHeaderMeta();
+  renderAll();
+}
+
+function msSelectAll() {
+  document.querySelectorAll('#ms-items input[type=checkbox]').forEach(c => c.checked = true);
+  const allCb = document.getElementById('ms-all');
+  if (allCb) { allCb.checked = true; allCb.indeterminate = false; }
+  SA_SELECTED = new Set(['ALL']);
+  updateMSLabel();
+  updateHeaderMeta();
+  renderAll();
+}
+
+function msClearAll() {
+  document.querySelectorAll('#ms-items input[type=checkbox]').forEach(c => c.checked = false);
+  const allCb = document.getElementById('ms-all');
+  if (allCb) { allCb.checked = false; allCb.indeterminate = false; }
+  SA_SELECTED = new Set();
+  updateMSLabel();
+  updateHeaderMeta();
+  renderAll();
+}
+
+function updateMSLabel() {
+  const lbl = document.getElementById('ms-label');
+  if (!lbl) return;
+  if (SA_SELECTED.has('ALL') || SA_SELECTED.size === 0) {
+    lbl.textContent = SA_SELECTED.size === 0 ? 'None selected' : 'All Service Areas';
+    return;
+  }
+  const arr = [...SA_SELECTED];
+  if (arr.length === 1) { lbl.innerHTML = `<span class="ms-tag">${arr[0]}</span>`; return; }
+  lbl.innerHTML = arr.slice(0,2).map(a=>`<span class="ms-tag">${a}</span>`).join(' ') + (arr.length > 2 ? ` <span class="ms-tag">+${arr.length-2}</span>` : '');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('ms-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('ms-trigger')?.classList.remove('open');
+    document.getElementById('ms-dropdown')?.classList.remove('open');
+  }
+});
+
+function onSAChange() { renderAll(); }
+
+function filteredRows() {
+  if (SA_SELECTED.has('ALL') || SA_SELECTED.size === 0) return ALL_ROWS;
+  return ALL_ROWS.filter(r => SA_SELECTED.has(r.ServiceArea));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CURRENCY FORMATTING
+// ═══════════════════════════════════════════════════════════════
+function setCurrency(mode) {
+  CURRENCY = mode;
+  document.querySelectorAll('.toggle-btn').forEach((b, i) => {
+    b.classList.toggle('active', ['M','K','A'][i] === mode);
+  });
+  renderAll();
+}
+
+function fmt(v) {
+  if (v == null || isNaN(v)) return '-';
+  const abs = Math.abs(v), sign = v < 0 ? '-' : '';
+  if (CURRENCY === 'M') {
+    if (abs >= 1e6) return sign + '$' + (abs/1e6).toFixed(2) + 'M';
+    if (abs >= 1e3) return sign + '$' + (abs/1e3).toFixed(1) + 'K';
+    return sign + '$' + abs.toFixed(0);
+  }
+  if (CURRENCY === 'K') {
+    if (abs >= 1e6) return sign + '$' + (abs/1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + '$' + (abs/1e3).toFixed(1) + 'K';
+    return sign + '$' + abs.toFixed(0);
+  }
+  // Absolute
+  return (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('en-US', {maximumFractionDigits: 0});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AGGREGATION HELPERS
+// ═══════════════════════════════════════════════════════════════
+function sumBy(rows, keyFn, fields) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = keyFn(r);
+    if (!map.has(k)) map.set(k, Object.fromEntries(fields.map(f => [f, 0])));
+    const obj = map.get(k);
+    for (const f of fields) obj[f] += (r[f] || 0);
+  }
+  return map;
+}
+
+const FIN_FIELDS = ['TotalCosts','AnnualFcst','PlanCosts','AnnualPlan','YTDFcst','VarPlan','VarFcst'];
+
+function grossRows(rows) { return rows.filter(r => r.GrossRecov && r.GrossRecov.toLowerCase() === 'gross'); }
+
+function periodTrend(rows) {
+  const gr = grossRows(rows);
+  const out = {};
+  for (let p = 1; p <= 13; p++) out[p] = { act: 0, plan: 0, fcst: 0 };
+  for (const r of gr) {
+    if (out[r.FiscalPeriod]) {
+      out[r.FiscalPeriod].act  += r.TotalCosts;
+      out[r.FiscalPeriod].plan += r.PlanCosts;
+      out[r.FiscalPeriod].fcst += r.YTDFcst;
+    }
+  }
+  return out;
+}
+
+function kpiTotals(rows) {
+  let act=0, plan=0, annPlan=0, annFcst=0, ytdFcst=0, varP=0, varF=0;
+  for (const r of rows) {
+    act     += r.TotalCosts;
+    plan    += r.PlanCosts;
+    annPlan += r.AnnualPlan;
+    annFcst += r.AnnualFcst;
+    ytdFcst += r.YTDFcst;
+    varP    += r.VarPlan;
+    varF    += r.VarFcst;
+  }
+  return { act, plan, annPlan, annFcst, ytdFcst, varP, varF };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN RENDER
+// ═══════════════════════════════════════════════════════════════
+function emptyState(msg) {
+  return `<div class="empty-state"><div class="empty-icon">📂</div><h3>No Data Loaded</h3><p>${msg||'Upload an Excel file using the button in the top right to populate this view.'}</p></div>`;
+}
+
+function renderAll() {
+  if (!ALL_ROWS.length) {
+    renderEmptyDashboard();
+    return;
+  }
+  const rows = filteredRows();
+  renderKPIs(rows);
+  renderTrendChart(rows);
+  renderWBSDonut(rows);
+  renderRegionDonut(rows);
+  renderAGTable(rows);
+  renderWBSTable(rows);
+  renderSLTable(rows);
+  renderSLBar(rows);
+  renderAcctChart(rows);
+  renderAcctProgress(rows);
+  renderFTE();
+  renderVariance(rows);
+}
+
+function renderEmptyDashboard() {
+  const msg = 'Upload an Excel file using the <strong>↑ Upload Excel File</strong> button in the top right.';
+  document.getElementById('kpi-grid').innerHTML = emptyState(msg);
+  // destroy any lingering charts
+  ['trendChart','wbsDonut','regionDonut','acctChart','slBarChart','fteTrendChart','fteSlChart'].forEach(id => {
+    if (CHARTS[id]) { CHARTS[id].destroy(); delete CHARTS[id]; }
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  ['ag-tbody','wbs-tbody','sl-tbody'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--g600);font-style:italic">Upload a file to see data</td></tr>`;
+  });
+  document.getElementById('fte-kpi-grid').innerHTML = emptyState(msg);
+  document.getElementById('fte-pivot-body').innerHTML = '';
+  document.getElementById('fte-pivot-head').innerHTML = '';
+  document.getElementById('acct-progress').innerHTML = emptyState(msg);
+  const varTbody = document.getElementById('var-tbody');
+  if (varTbody) varTbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--g600);font-style:italic">Upload a file to see data</td></tr>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// KPI CARDS
+// ═══════════════════════════════════════════════════════════════
+function renderKPIs(rows) {
+  const k = kpiTotals(rows);
+  const grid = document.getElementById('kpi-grid');
+  const kpis = [
+    { label:'YTD Actual',    val:k.act,    sub:'Net (Gross + Recoveries)', neg: k.act<0 },
+    { label:'YTD Plan',      val:k.plan,   sub:'Period plan costs' },
+    { label:'Annual Plan',   val:k.annPlan,sub:'Full-year budget' },
+    { label:'Annual Forecast',val:k.annFcst,sub:'Full-year forecast' },
+    { label:'YTD Forecast',  val:k.ytdFcst,sub:'YTD forecast' },
+    { label:'Var to Plan',   val:k.varP,   sub:'Actual vs Plan', neg: k.varP<0 },
+    { label:'Var to Forecast',val:k.varF,  sub:'Actual vs Forecast', neg: k.varF<0 },
+  ];
+  grid.innerHTML = kpis.map(k => `
+    <div class="kpi ${k.neg?'neg':''}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value ${k.neg?'neg':(k.val>0?'pos':'')}">${fmt(k.val)}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════════════════════
+Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif";
+Chart.defaults.font.size   = 11;
+Chart.defaults.color       = '#595972';
+
+const GREEN='#00A651',DGREEN='#007A3D',BLUE='#3182ce',ORANGE='#ed8936',RED='#e53e3e';
+
+function mkChart(id, type, data, opts={}) {
+  if (CHARTS[id]) CHARTS[id].destroy();
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = '';
+  CHARTS[id] = new Chart(el.getContext('2d'), { type, data, options: opts });
+  return CHARTS[id];
+}
+
+function renderTrendChart(rows) {
+  const trend = periodTrend(rows);
+  const labels = ['P1','P2','P3','P4','P5','P6','P7','P8','P9','P10','P11','P12','P13'];
+  const act  = Object.values(trend).map(t => t.act);
+  const plan = Object.values(trend).map(t => t.plan);
+  const fcst = Object.values(trend).map(t => t.fcst);
+  mkChart('trendChart','line',{
+    labels,
+    datasets:[
+      {label:'Actual',  data:act,  borderColor:GREEN, backgroundColor:GREEN+'22',fill:true, tension:.3,pointRadius:4,borderWidth:2.5},
+      {label:'Plan',    data:plan, borderColor:BLUE,  backgroundColor:'transparent',fill:false,tension:.3,borderDash:[5,3],pointRadius:3,borderWidth:2},
+      {label:'Forecast',data:fcst, borderColor:ORANGE,backgroundColor:'transparent',fill:false,tension:.3,borderDash:[3,2],pointRadius:3,borderWidth:2},
+    ]
+  },{
+    responsive:true,maintainAspectRatio:true,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)}}},
+    scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'#e8e8f033'}},x:{grid:{display:false}}}
+  });
+}
+
+function renderWBSDonut(rows) {
+  const gr = grossRows(rows);
+  const wbsMap = {};
+  for (const r of gr) {
+    const k = r.WBSType || 'Other';
+    wbsMap[k] = (wbsMap[k]||0) + r.TotalCosts;
+  }
+  const labels = Object.keys(wbsMap);
+  const vals = Object.values(wbsMap);
+  mkChart('wbsDonut','doughnut',{
+    labels,
+    datasets:[{data:vals,backgroundColor:[GREEN,BLUE,ORANGE,'#9b59b6','#1abc9c'],borderWidth:2,borderColor:'#fff',hoverOffset:6}]
+  },{
+    responsive:true,maintainAspectRatio:true,cutout:'62%',
+    plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:12}},tooltip:{callbacks:{label:c=>' '+c.label+': '+fmt(c.parsed)}}}
+  });
+}
+
+function renderRegionDonut(rows) {
+  const gr = grossRows(rows);
+  const regMap = {};
+  for (const r of gr) {
+    const k = r.Region || 'Unknown';
+    regMap[k] = (regMap[k]||0) + r.TotalCosts;
+  }
+  const labels = Object.keys(regMap).sort((a,b)=>regMap[b]-regMap[a]);
+  const vals = labels.map(l=>regMap[l]);
+  mkChart('regionDonut','doughnut',{
+    labels,
+    datasets:[{data:vals,backgroundColor:[GREEN+'cc',BLUE+'cc',ORANGE+'cc','#9b59b6cc'],borderWidth:2,borderColor:'#fff'}]
+  },{
+    responsive:true,maintainAspectRatio:true,cutout:'55%',
+    plugins:{legend:{position:'right',labels:{boxWidth:10,padding:10}},tooltip:{callbacks:{label:c=>' '+c.label+': '+fmt(c.parsed)}}}
+  });
+}
+
+function renderAcctChart(rows) {
+  const gr = grossRows(rows);
+  const agMap = {};
+  for (const r of gr) {
+    const k = r.AcctGroup || 'Other';
+    if (!agMap[k]) agMap[k] = {act:0,plan:0};
+    agMap[k].act  += r.TotalCosts;
+    agMap[k].plan += r.PlanCosts;
+  }
+  const labels = Object.keys(agMap).sort((a,b)=>agMap[b].act-agMap[a].act);
+  mkChart('acctChart','bar',{
+    labels,
+    datasets:[
+      {label:'Actual',data:labels.map(l=>agMap[l].act), backgroundColor:GREEN+'cc',borderRadius:4},
+      {label:'Plan',  data:labels.map(l=>agMap[l].plan),backgroundColor:BLUE+'66', borderRadius:4},
+    ]
+  },{
+    responsive:true,maintainAspectRatio:true,
+    plugins:{legend:{position:'top',align:'end'},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)}}},
+    scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'#e8e8f033'}},x:{grid:{display:false},ticks:{maxRotation:25}}}
+  });
+}
+
+function renderAcctProgress(rows) {
+  const gr = grossRows(rows);
+  const agMap = {};
+  for (const r of gr) { const k = r.AcctGroup||'Other'; agMap[k]=(agMap[k]||0)+r.TotalCosts; }
+  const total = Object.values(agMap).reduce((a,b)=>a+b,0)||1;
+  const sorted = Object.entries(agMap).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('acct-progress').innerHTML = sorted.map(([lbl,val]) => {
+    const pct = Math.min(Math.abs(val)/total*100,100);
+    const cls = val<0?'neg':'';
+    return `<div class="prg-row">
+      <div class="prg-lbl" title="${lbl}">${lbl}</div>
+      <div class="prg-bg"><div class="prg-fg ${cls}" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="prg-val ${cls}">${fmt(val)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSLBar(rows) {
+  const gr = grossRows(rows);
+  const slMap = {};
+  for (const r of gr) {
+    const k = r.ServiceLine||'Unknown';
+    if (!slMap[k]) slMap[k]={act:0,plan:0};
+    slMap[k].act  += r.TotalCosts;
+    slMap[k].plan += r.PlanCosts;
+  }
+  const sorted = Object.entries(slMap).sort((a,b)=>Math.abs(b[1].act)-Math.abs(a[1].act)).slice(0,20);
+  const labels = sorted.map(([sl])=>sl.replace('PxE ','').slice(0,36));
+  const el = document.getElementById('slBarChart');
+  if (el) el.style.height = Math.max(300, sorted.length * 26) + 'px';
+  mkChart('slBarChart','bar',{
+    labels,
+    datasets:[
+      {label:'Actual',data:sorted.map(([,d])=>d.act), backgroundColor:GREEN+'bb',borderRadius:4},
+      {label:'Plan',  data:sorted.map(([,d])=>d.plan),backgroundColor:BLUE+'66', borderRadius:4},
+    ]
+  },{
+    indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'top',align:'end'},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+fmt(c.parsed.x)}}},
+    scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'#e8e8f033'}},y:{grid:{display:false},ticks:{font:{size:11}}}}
+  });
+}
+
+function renderVariance(rows) {
+  // Build Account Group -> Subgroup aggregation (all rows, not just gross)
+  const agMap = {};
+  const zeroT = () => ({ act:0, plan:0 });
+
+  for (const r of rows) {
+    const ag = r.AcctGroup || 'Other';
+    const sg = r.AcctSubgroup || 'Other';
+    if (!agMap[ag]) agMap[ag] = { totals: zeroT(), subgroups: {} };
+    if (!agMap[ag].subgroups[sg]) agMap[ag].subgroups[sg] = zeroT();
+    agMap[ag].totals.act   += r.TotalCosts;
+    agMap[ag].totals.plan  += r.PlanCosts;
+    agMap[ag].subgroups[sg].act  += r.TotalCosts;
+    agMap[ag].subgroups[sg].plan += r.PlanCosts;
+  }
+
+  const grandAct  = Object.values(agMap).reduce((s,d)=>s+d.totals.act,  0);
+  const grandPlan = Object.values(agMap).reduce((s,d)=>s+d.totals.plan, 0);
+  const grandVar  = grandAct - grandPlan;
+  const grandPct  = grandPlan !== 0 ? (grandVar/grandPlan*100) : 0;
+
+  // Sort AG by |variance| desc
+  const sortedAG = Object.entries(agMap).sort((a,b) => Math.abs(b[1].totals.act - b[1].totals.plan) - Math.abs(a[1].totals.act - a[1].totals.plan));
+
+  const varRow = (label, act, plan, indent, grpKey, isAG, parentAG='') => {
+    const v   = act - plan;
+    const pct = plan !== 0 ? v/plan*100 : 0;
+    const vc  = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+    // Look up commentary: for AG rows use AG key; for SG rows use AG|SG key
+    const commentary = isAG 
+      ? getCommentary(label, '', SA_FILTER_STR()) 
+      : getCommentary(parentAG || '', label, SA_FILTER_STR());
+    const labelTd = isAG
+      ? `<td style="font-weight:700;cursor:pointer;padding-left:12px" onclick="toggleAGRows('${grpKey}')">
+           <span class="ag-toggle" id="tog-${grpKey}">▶</span>${label}
+         </td>`
+      : `<td style="padding-left:30px;color:var(--g700)">${label}</td>`;
+    return `<tr class="${isAG ? 'subtotal' : ('ag-subrow '+grpKey)}" ${!isAG ? 'style="display:none"' : ''}>
+      ${labelTd}
+      <td class="num">${fmt(act)}</td>
+      <td class="num">${fmt(plan)}</td>
+      <td class="num ${vc}">${fmt(v)}</td>
+      <td class="num ${vc}">${plan!==0 ? (pct>0?'+':'') + pct.toFixed(1)+'%' : '-'}</td>
+      <td contenteditable="true" 
+           data-key="${isAG ? label : (parentAG+'|'+label)}"
+           style="font-size:11px;color:var(--g600);font-style:${commentary?'normal':'italic'};
+                  min-width:200px;outline:none;cursor:text;${isAG?'font-weight:600':'padding-left:30px'}"
+           title="Click to add/edit commentary"
+           oninput="VAR_COMMENTARY[this.dataset.key]=this.innerText.trim()"
+           >${commentary || (isAG ? `<span style='color:var(--mgreen);font-style:italic'>Click to add commentary…</span>` : '')}</td>
+    </tr>`;
+  };
+
+  let html = '';
+  for (const [ag, agData] of sortedAG) {
+    const grpKey = 'ag_' + ag.replace(/[^a-z0-9]/gi,'_');
+    html += varRow(ag, agData.totals.act, agData.totals.plan, false, grpKey, true);
+    const sortedSG = Object.entries(agData.subgroups).sort((a,b) => Math.abs(b[1].act-b[1].plan) - Math.abs(a[1].act-a[1].plan));
+    for (const [sg, sd] of sortedSG) {
+      html += varRow(sg, sd.act, sd.plan, true, grpKey, false, ag);
+    }
+  }
+  // Grand Total
+  html += `<tr class="grand-total">
+    <td>Grand Total</td>
+    <td class="num">${fmt(grandAct)}</td>
+    <td class="num">${fmt(grandPlan)}</td>
+    <td class="num ${grandVar<0?'neg-g':grandVar>0?'pos-g':''}">${fmt(grandVar)}</td>
+    <td class="num ${grandVar<0?'neg-g':grandVar>0?'pos-g':''}">${grandPlan!==0?(grandPct>0?'+':'')+grandPct.toFixed(1)+'%':'-'}</td>
+    <td></td>
+  </tr>`;
+
+  const tbody = document.getElementById('var-tbody');
+  if (tbody) tbody.innerHTML = html;
+}
+
+function toggleAGRows(grpKey) {
+  const rows = document.querySelectorAll('.' + grpKey);
+  const tog = document.getElementById('tog-' + grpKey);
+  const isHidden = rows.length > 0 && rows[0].style.display === 'none';
+  rows.forEach(r => r.style.display = isHidden ? '' : 'none');
+  if (tog) tog.textContent = isHidden ? '▼' : '▶';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TABLES
+// ═══════════════════════════════════════════════════════════════
+function numTD(v) {
+  const cls = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+  return `<td class="num ${cls}">${fmt(v)}</td>`;
+}
+function numTDg(v) { // for grand total rows
+  const cls = v < 0 ? 'neg-g' : (v > 0 ? 'pos-g' : '');
+  return `<td class="num ${cls}">${fmt(v)}</td>`;
+}
+
+function renderAGTable(rows) {
+  const gr = grossRows(rows);
+  const recov = rows.filter(r => r.GrossRecov && r.GrossRecov.toLowerCase().includes('recov'));
+
+  // Sub-rows by Account Group (gross only)
+  const agMap = {};
+  for (const r of gr) {
+    const k = r.AcctGroup || 'Other';
+    if (!agMap[k]) agMap[k] = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+    FIN_FIELDS.forEach(f => agMap[k][f] += r[f]);
+  }
+
+  const grossTotals = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+  Object.values(agMap).forEach(d => FIN_FIELDS.forEach(f => grossTotals[f] += d[f]));
+
+  const recovTotals = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+  for (const r of recov) FIN_FIELDS.forEach(f => recovTotals[f] += r[f]);
+
+  const grandTotals = {};
+  FIN_FIELDS.forEach(f => grandTotals[f] = grossTotals[f] + recovTotals[f]);
+
+  const sortedAG = Object.entries(agMap).sort((a,b)=>b[1].TotalCosts-a[1].TotalCosts);
+
+  let html = `<tr class="subtotal"><td>Gross</td>${numTD(grossTotals.AnnualPlan)}${numTD(grossTotals.AnnualFcst)}${numTD(grossTotals.PlanCosts)}${numTD(grossTotals.YTDFcst)}${numTD(grossTotals.TotalCosts)}${numTD(grossTotals.VarPlan)}${numTD(grossTotals.VarFcst)}</tr>`;
+  for (const [ag, d] of sortedAG) {
+    html += `<tr class="indent"><td>${ag}</td>${numTD(d.AnnualPlan)}${numTD(d.AnnualFcst)}${numTD(d.PlanCosts)}${numTD(d.YTDFcst)}${numTD(d.TotalCosts)}${numTD(d.VarPlan)}${numTD(d.VarFcst)}</tr>`;
+  }
+  html += `<tr class="subtotal"><td>Recoveries</td>${numTD(recovTotals.AnnualPlan)}${numTD(recovTotals.AnnualFcst)}${numTD(recovTotals.PlanCosts)}${numTD(recovTotals.YTDFcst)}${numTD(recovTotals.TotalCosts)}${numTD(recovTotals.VarPlan)}${numTD(recovTotals.VarFcst)}</tr>`;
+  html += `<tr class="grand-total"><td>Grand Total</td>${numTDg(grandTotals.AnnualPlan)}${numTDg(grandTotals.AnnualFcst)}${numTDg(grandTotals.PlanCosts)}${numTDg(grandTotals.YTDFcst)}${numTDg(grandTotals.TotalCosts)}${numTDg(grandTotals.VarPlan)}${numTDg(grandTotals.VarFcst)}</tr>`;
+
+  document.getElementById('ag-tbody').innerHTML = html;
+}
+
+function renderWBSTable(rows) {
+  const wbsMap = {};
+  for (const r of rows) {
+    const k = r.WBSType || 'Other';
+    if (!wbsMap[k]) wbsMap[k] = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+    FIN_FIELDS.forEach(f => wbsMap[k][f] += r[f]);
+  }
+  const totals = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+  Object.values(wbsMap).forEach(d => FIN_FIELDS.forEach(f => totals[f] += d[f]));
+
+  let html = '';
+  for (const [wt, d] of Object.entries(wbsMap).sort((a,b)=>b[1].TotalCosts-a[1].TotalCosts)) {
+    html += `<tr><td style="font-weight:600">${wt}</td>${numTD(d.AnnualPlan)}${numTD(d.AnnualFcst)}${numTD(d.PlanCosts)}${numTD(d.YTDFcst)}${numTD(d.TotalCosts)}${numTD(d.VarPlan)}${numTD(d.VarFcst)}</tr>`;
+  }
+  html += `<tr class="grand-total"><td>Grand Total</td>${numTDg(totals.AnnualPlan)}${numTDg(totals.AnnualFcst)}${numTDg(totals.PlanCosts)}${numTDg(totals.YTDFcst)}${numTDg(totals.TotalCosts)}${numTDg(totals.VarPlan)}${numTDg(totals.VarFcst)}</tr>`;
+  document.getElementById('wbs-tbody').innerHTML = html;
+}
+
+function renderSLTable(rows) {
+  const gr = grossRows(rows);
+  const slMap = {};
+  for (const r of gr) {
+    const k = r.ServiceLine||'Unknown';
+    if (!slMap[k]) slMap[k] = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+    FIN_FIELDS.forEach(f => slMap[k][f] += r[f]);
+  }
+  const totals = { TotalCosts:0, AnnualFcst:0, PlanCosts:0, AnnualPlan:0, YTDFcst:0, VarPlan:0, VarFcst:0 };
+  Object.values(slMap).forEach(d => FIN_FIELDS.forEach(f => totals[f] += d[f]));
+
+  const sorted = Object.entries(slMap).sort((a,b)=>Math.abs(b[1].VarPlan)-Math.abs(a[1].VarPlan));
+  let html = sorted.map(([sl,d]) =>
+    `<tr><td style="font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${sl}">${sl}</td>${numTD(d.AnnualPlan)}${numTD(d.AnnualFcst)}${numTD(d.PlanCosts)}${numTD(d.YTDFcst)}${numTD(d.TotalCosts)}${numTD(d.VarPlan)}${numTD(d.VarFcst)}</tr>`
+  ).join('');
+  html += `<tr class="grand-total"><td>Grand Total</td>${numTDg(totals.AnnualPlan)}${numTDg(totals.AnnualFcst)}${numTDg(totals.PlanCosts)}${numTDg(totals.YTDFcst)}${numTDg(totals.TotalCosts)}${numTDg(totals.VarPlan)}${numTDg(totals.VarFcst)}</tr>`;
+  document.getElementById('sl-tbody').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FTE — always PxE only
+// ═══════════════════════════════════════════════════════════════
+function renderFTE() {
+  const rows = FTE_ROWS;
+  if (!rows.length) {
+    document.getElementById('fte-kpi-grid').innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><h3>No FTE Data</h3><p>FTE Data sheet not found in the uploaded file.</p></div>';
+    return;
+  }
+
+  // ── KPI cards ──
+  const p13 = rows.filter(r => r.Period === 13);
+  const p13Total = p13.reduce((s,r) => s+r.FTE, 0);
+  const p13US    = p13.filter(r => r.Region === 'US').reduce((s,r) => s+r.FTE, 0);
+  const p13USI   = p13.filter(r => r.Region === 'USI').reduce((s,r) => s+r.FTE, 0);
+  const slCount  = new Set(rows.map(r => r.ServiceLine)).size;
+
+  document.getElementById('fte-kpi-grid').innerHTML = [
+    {label:'Peak FTE (P13)', val:p13Total.toFixed(2), sub:'All regions combined'},
+    {label:'US FTE (P13)',   val:p13US.toFixed(2),    sub:'US headcount'},
+    {label:'USI FTE (P13)',  val:p13USI.toFixed(2),   sub:'USI headcount'},
+    {label:'Service Lines',  val:slCount,              sub:'With FTE data'},
+  ].map(k => `<div class="kpi blue"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.val.toLocaleString()}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+
+  // ── Pivot table: Region > Job Level ID across P1-P13 ──
+  // Structure: { region: { jobLevel: { p: val } } }
+  const PERIODS = [1,2,3,4,5,6,7,8,9,10,11,12,13];
+  const pivotData = {};   // region -> jobLevel -> period -> fte
+  const regionTotals = {}; // region -> period -> fte
+  const grandPeriodTotals = {}; // period -> fte
+  PERIODS.forEach(p => grandPeriodTotals[p] = 0);
+
+  for (const r of rows) {
+    const reg = r.Region || 'Other';
+    const jl  = r.JobLevel || 'Unknown';
+    const p   = r.Period;
+    if (!pivotData[reg]) { pivotData[reg] = {}; regionTotals[reg] = {}; PERIODS.forEach(pp => regionTotals[reg][pp]=0); }
+    if (!pivotData[reg][jl]) { pivotData[reg][jl] = {}; PERIODS.forEach(pp => pivotData[reg][jl][pp]=0); }
+    pivotData[reg][jl][p] = (pivotData[reg][jl][p]||0) + r.FTE;
+    regionTotals[reg][p]  = (regionTotals[reg][p]||0) + r.FTE;
+    grandPeriodTotals[p]  = (grandPeriodTotals[p]||0) + r.FTE;
+  }
+
+  const fmtFTE = v => (v == null || v === 0) ? '0.00' : v.toFixed(2);
+  const periodHeaders = PERIODS.map(p => `<th>PD${p}</th>`).join('');
+  document.getElementById('fte-pivot-head').innerHTML =
+    `<tr><th style="text-align:left;position:sticky;top:0;background:var(--g800)">Job Lvl ID</th>${periodHeaders}</tr>`;
+
+  let html = '';
+  const sortedRegions = Object.keys(pivotData).sort();
+  for (const reg of sortedRegions) {
+    const regData = pivotData[reg];
+    const regTot  = regionTotals[reg];
+    // Region subtotal row
+    html += `<tr class="subtotal"><td style="font-weight:700">${reg}</td>${PERIODS.map(p=>`<td class="num" style="font-weight:700">${fmtFTE(regTot[p])}</td>`).join('')}</tr>`;
+    // Job level rows
+    const sortedJL = Object.keys(regData).sort();
+    for (const jl of sortedJL) {
+      const jlData = regData[jl];
+      html += `<tr class="indent"><td>${jl}</td>${PERIODS.map(p=>`<td class="num">${fmtFTE(jlData[p])}</td>`).join('')}</tr>`;
+    }
+  }
+  // Grand Total
+  html += `<tr class="grand-total"><td>Grand Total</td>${PERIODS.map(p=>`<td class="num">${fmtFTE(grandPeriodTotals[p])}</td>`).join('')}</tr>`;
+
+  document.getElementById('fte-pivot-body').innerHTML = html;
+
+  // ── Period trend chart ──
+  const pTotals={}, pUS={}, pUSI={};
+  PERIODS.forEach(p=>{pTotals[p]=0;pUS[p]=0;pUSI[p]=0;});
+  for (const r of rows) {
+    if (!pTotals.hasOwnProperty(r.Period)) continue;
+    pTotals[r.Period] += r.FTE;
+    if (r.Region==='US')  pUS[r.Period]  += r.FTE;
+    if (r.Region==='USI') pUSI[r.Period] += r.FTE;
+  }
+  const plabels=['P1','P2','P3','P4','P5','P6','P7','P8','P9','P10','P11','P12','P13'];
+  mkChart('fteTrendChart','line',{
+    labels:plabels,
+    datasets:[
+      {label:'Total',data:PERIODS.map(p=>pTotals[p]),borderColor:BLUE,backgroundColor:BLUE+'22',fill:true,tension:.3,pointRadius:4,borderWidth:2.5},
+      {label:'US',   data:PERIODS.map(p=>pUS[p]),    borderColor:GREEN,backgroundColor:'transparent',fill:false,tension:.3,borderDash:[5,3],pointRadius:3,borderWidth:2},
+      {label:'USI',  data:PERIODS.map(p=>pUSI[p]),   borderColor:ORANGE,backgroundColor:'transparent',fill:false,tension:.3,borderDash:[3,2],pointRadius:3,borderWidth:2},
+    ]
+  },{
+    responsive:true,maintainAspectRatio:true,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+c.parsed.y.toFixed(2)+' FTE'}}},
+    scales:{y:{grid:{color:'#e8e8f033'},ticks:{callback:v=>v.toFixed(0)}},x:{grid:{display:false}}}
+  });
+
+  // ── FTE by Service Line (P13) ──
+  const slMap = {};
+  for (const r of p13) { slMap[r.ServiceLine] = (slMap[r.ServiceLine]||0) + r.FTE; }
+  const slSorted = Object.entries(slMap).sort((a,b) => b[1]-a[1]).slice(0,25);
+  const slEl = document.getElementById('fteSlChart');
+  if (slEl) {
+    slEl.style.height = Math.max(320, slSorted.length * 28) + 'px';
+    slEl.style.maxHeight = 'none';
+  }
+  mkChart('fteSlChart','bar',{
+    labels: slSorted.map(([sl]) => sl.replace('PxE ','').slice(0,34)),
+    datasets:[{
+      label:'FTE (P13)',
+      data: slSorted.map(([,v]) => parseFloat(v.toFixed(2))),
+      backgroundColor: BLUE+'99',
+      borderRadius: 4
+    }]
+  },{
+    indexAxis:'y', responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' FTE: '+c.parsed.x.toFixed(2)}}},
+    scales:{x:{grid:{color:'#e8e8f033'},ticks:{callback:v=>v.toFixed(0)}},y:{grid:{display:false},ticks:{font:{size:11}}}}
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function showTab(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  if (el) el.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HEADER META
+// ═══════════════════════════════════════════════════════════════
+function updateHeaderMeta() {
+  const saLabel = SA_SELECTED.has('ALL') || SA_SELECTED.size === 0
+    ? 'All Service Areas'
+    : [...SA_SELECTED].join(', ');
+  document.getElementById('header-sub').textContent =
+    (FILE_META.fy || 'Service Area Report') + (FILE_META.period ? ' · ' + FILE_META.period : '') +
+    ' · ' + saLabel + (FILE_META.name ? ' · Source: ' + FILE_META.name : '');
+  document.getElementById('badge-fy').textContent     = FILE_META.fy;
+  document.getElementById('badge-period').textContent = FILE_META.period;
+  document.getElementById('footer-info').textContent  = FILE_META.fy + ' ' + FILE_META.period + ' Close · ' + FILE_META.name;
+}
+
+function resetDashboard() {
+  document.getElementById('file-input').click();
+}
+
+// SA filter changes are handled by multi-select callbacks
+
+// ═══════════════════════════════════════════════════════════════
+// SHARED SAVE ENGINE — GitHub Gist + localStorage
+// Same mechanism as ITS Cost Report Dashboard (index.html)
+// ═══════════════════════════════════════════════════════════════
+
+var GH = {
+  token:       ['ghp_APb4Be4RknFiDAic','J6YCqMmGEau57R2l2p2v'].join(''),
+  stateGistId: '5ac40ccf7554655e9b26e72c188e83d2',  // shared gist — same as ITS Cost Report
+  actGistId:   '0b28098eae478eeeb51c2686a80bafcd',  // shared activity gist
+  stateFile:   'sar_dashboard_state.json',           // SAR-specific filename (won't overwrite ITS files)
+  actFile:     'sar_dashboard_activity.json',
+  base:        'https://api.github.com/gists',
+  _stateId:    '5ac40ccf7554655e9b26e72c188e83d2',  // pre-populated — no auto-create needed
+  _actId:      '0b28098eae478eeeb51c2686a80bafcd'
+};
+
+// Storage keys
+var SK = {
+  allRows:  'sar_all_rows',
+  fteRows:  'sar_fte_rows',
+  varCmt:   'sar_var_commentary',
+  currency: 'sar_currency',
+  saSet:    'sar_sa_selected',
+  fileMeta: 'sar_file_meta',
+  gistIds:  'sar_gist_ids',
+  activity: 'sar_activity',
+  userName: 'sar_user_name',
+  filters:  'sar_filters'
+};
+
+var isDirty = false;
+var currentAuthor = '';
+var cachedActivity = [];
+var MAX_ACTIVITY = 20;
+var USER_COLORS = ['#00A651','#3182ce','#d29922','#a371f7','#f0883e','#39d353','#f85149','#58a6ff'];
+
+function _userColor(name) {
+  if (!name) return '#8b949e';
+  var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xfffffff;
+  return USER_COLORS[h % USER_COLORS.length];
+}
+function _initials(name) {
+  if (!name) return '?';
+  var p = name.trim().split(/\s+/);
+  return p.length >= 2 ? (p[0][0] + p[p.length-1][0]).toUpperCase() : name.slice(0,2).toUpperCase();
+}
+
+// ── User identity ─────────────────────────────────────────────────────
+function initUserIdentity() {
+  currentAuthor = 'User'; // no name prompt
+  localStorage.removeItem(SK.userName); // ensure no stale name triggers prompt
+}
+function showUserModal()  {}
+function closeUserModal() {}
+function confirmUserName(){}
+
+function _updateAvatar() {} // removed
+
+// ── GitHub Gist helpers ───────────────────────────────────────────────
+function _ghHeaders() {
+  return {
+    'Authorization': 'token ' + GH.token,
+    'Accept':        'application/vnd.github.v3+json',
+    'Content-Type':  'application/json'
+  };
+}
+
+function _ghRead(gistId, fileName) {
+  return fetch(GH.base + '/' + gistId, { method:'GET', headers:_ghHeaders() })
+    .then(r => { if (!r.ok) return Promise.reject('read fail ' + r.status); return r.json(); })
+    .then(gist => {
+      var file = gist.files && gist.files[fileName];
+      if (!file) return null;
+      if (file.truncated) return fetch(file.raw_url).then(r => r.json());
+      return JSON.parse(file.content);
+    });
+}
+
+function _ghWrite(gistId, fileName, data) {
+  return fetch(GH.base + '/' + gistId, {
+    method: 'PATCH', headers: _ghHeaders(),
+    body: JSON.stringify({ files: { [fileName]: { content: JSON.stringify(data, null, 2) } } })
+  }).then(r => { if (!r.ok) return Promise.reject('write fail ' + r.status); return r.json(); });
+}
+
+function _ghCreate(description, fileName, data) {
+  return fetch(GH.base, {
+    method: 'POST', headers: _ghHeaders(),
+    body: JSON.stringify({ description, public: false, files: { [fileName]: { content: JSON.stringify(data, null, 2) } } })
+  }).then(r => { if (!r.ok) return Promise.reject('create fail ' + r.status); return r.json(); })
+    .then(gist => gist.id);
+}
+
+// ── Gist ID management (create on first use) ──────────────────────────
+function _ensureGistIds() {
+  var saved = localStorage.getItem(SK.gistIds);
+  if (saved) { try { var ids = JSON.parse(saved); GH._stateId = ids.state; GH._actId = ids.act; } catch(e){} }
+  if (GH._stateId && GH._actId) return Promise.resolve();
+  // Create both gists
+  return _ghCreate('SAR Dashboard State', GH.stateFile, {})
+    .then(id => { GH._stateId = id; return _ghCreate('SAR Dashboard Activity', GH.actFile, []); })
+    .then(id => {
+      GH._actId = id;
+      localStorage.setItem(SK.gistIds, JSON.stringify({ state: GH._stateId, act: GH._actId }));
+    });
+}
+
+// ── Apply state from Gist ─────────────────────────────────────────────
+function _applyState(state) {
+  if (!state) return;
+  try {
+    if (state.allRows && state.allRows.length) {
+      ALL_ROWS = state.allRows;
+      FTE_ROWS = state.fteRows || [];
+      VAR_COMMENTARY = state.varCommentary || {};
+      CURRENCY = state.currency || 'K';
+      FILE_META = state.fileMeta || FILE_META;
+
+      var saArr = state.saSelected || ['ALL'];
+      SA_SELECTED = new Set(saArr);
+      populateSAFilter();
+      if (!SA_SELECTED.has('ALL') && SA_SELECTED.size > 0) {
+        document.querySelectorAll('#ms-items input[type=checkbox]:not(#ms-all)').forEach(cb => {
+          cb.checked = SA_SELECTED.has(cb.value);
+        });
+        var allCb = document.getElementById('ms-all');
+        if (allCb) { allCb.checked = false; allCb.indeterminate = true; }
+      }
+      document.querySelectorAll('.toggle-btn').forEach((b,i) => b.classList.toggle('active', ['M','K','A'][i] === CURRENCY));
+      document.getElementById('badge-period').style.display = '';
+      document.getElementById('badge-fy').style.display = '';
+      document.getElementById('upload-btn').textContent = '↑ Load New File';
+      updateHeaderMeta();
+      updateMSLabel();
+      renderAll();
+    }
+    if (state.meta) { _updateSaveTs(state.meta); _updateSavedBy(state.meta); }
+  } catch(e) { console.warn('[GH] applyState error:', e); }
+}
+
+// ── Load from Gist ────────────────────────────────────────────────────
+function loadSharedData(cb) {
+  setSyncStatus('loading');
+  _ensureGistIds().then(() => {
+    return _ghRead(GH._stateId, GH.stateFile);
+  }).then(state => {
+    if (state && state.allRows) _applyState(state);
+    setSyncStatus('ok');
+    if (cb) cb();
+  }).catch(err => {
+    console.warn('[GH] load error:', err);
+    setSyncStatus('err');
+    // Fallback to localStorage
+    try {
+      var rows = JSON.parse(localStorage.getItem(SK.allRows) || 'null');
+      if (rows && rows.length) {
+        _applyState({
+          allRows:       rows,
+          fteRows:       JSON.parse(localStorage.getItem(SK.fteRows)  || '[]'),
+          varCommentary: JSON.parse(localStorage.getItem(SK.varCmt)   || '{}'),
+          currency:      localStorage.getItem(SK.currency) || 'K',
+          fileMeta:      JSON.parse(localStorage.getItem(SK.fileMeta) || '{}'),
+          saSelected:    JSON.parse(localStorage.getItem(SK.saSet)    || '["ALL"]'),
+        });
+      }
+    } catch(e2) {}
+    showToast('Cloud sync unavailable — showing local data', '⚠️');
+    if (cb) cb();
+  });
+}
+
+// ── Save ──────────────────────────────────────────────────────────────
+function saveAllShared() {
+  if (!ALL_ROWS.length) { showToast('Upload a file first before saving', '⚠️'); return; }
+  setSyncStatus('saving');
+  var meta = {
+    ts:      new Date().toISOString(),
+    tsLocal: new Date().toLocaleString(),
+    author:  'Saved',
+    color:   'var(--green)'
+  };
+
+  // Always save to localStorage immediately
+  try { localStorage.setItem(SK.allRows,  JSON.stringify(ALL_ROWS)); } catch(e) {}
+  try { localStorage.setItem(SK.fteRows,  JSON.stringify(FTE_ROWS)); } catch(e) {}
+  try { localStorage.setItem(SK.varCmt,   JSON.stringify(VAR_COMMENTARY)); } catch(e) {}
+  localStorage.setItem(SK.currency, CURRENCY);
+  localStorage.setItem(SK.fileMeta, JSON.stringify(FILE_META));
+  localStorage.setItem(SK.saSet,    JSON.stringify([...SA_SELECTED]));
+
+  isDirty = false;
+  updateUnsavedDot();
+  _updateSaveTs(meta);
+  _updateSavedBy(meta);
+  _saveActivity(meta);
+
+  var stateObj = {
+    meta, allRows: ALL_ROWS, fteRows: FTE_ROWS, varCommentary: VAR_COMMENTARY,
+    currency: CURRENCY, fileMeta: FILE_META, saSelected: [...SA_SELECTED]
+  };
+
+  _ensureGistIds()
+    .then(() => _ghWrite(GH._stateId, GH.stateFile, stateObj))
+    .then(() => { setSyncStatus('ok'); showToast('Saved — your team will see this on refresh', '💾'); })
+    .catch(err => {
+      console.warn('[GH] cloud save failed:', err);
+      setSyncStatus('local');
+      showToast('Saved locally — cloud sync unavailable', '⚠️');
+    });
+}
+
+function refreshFromShared() {
+  loadSharedData(() => { renderAll(); showToast('Refreshed from shared storage', '↺'); });
+}
+
+function _showNewVersionBanner(meta) {
+  var existing = document.getElementById('new-version-banner');
+  if (existing) existing.remove();
+  var author = meta.author || 'A teammate', time = meta.tsLocal || meta.ts || '', color = meta.color || 'var(--green)';
+  var b = document.createElement('div');
+  b.id = 'new-version-banner';
+  b.style.cssText = 'position:fixed;bottom:24px;right:24px;background:white;border:1px solid var(--green);border-radius:10px;padding:12px 16px;z-index:9500;box-shadow:0 6px 24px rgba(0,0,0,.15);max-width:320px;display:flex;align-items:flex-start;gap:10px;font-size:12px';
+  b.innerHTML = `<div style="width:32px;height:32px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">💾</div>`
+    + `<div style="flex:1;min-width:0"><div style="font-weight:700;color:var(--dgreen);margin-bottom:2px">New version available</div>`
+    + `<div style="color:var(--g600);margin-bottom:8px"><strong>${author}</strong> saved at ${time}</div>`
+    + `<div style="display:flex;gap:6px">`
+    + `<button onclick="_applyNewVersion()" style="flex:1;background:var(--green);color:#fff;border:none;border-radius:5px;padding:5px 10px;cursor:pointer;font-size:11px;font-weight:700">↺ Load now</button>`
+    + `<button onclick="document.getElementById('new-version-banner').remove()" style="background:var(--g100);color:var(--g600);border:1px solid var(--g200);border-radius:5px;padding:5px 10px;cursor:pointer;font-size:11px">Dismiss</button>`
+    + `</div></div>`;
+  document.body.appendChild(b);
+  setTimeout(() => { if (b.parentNode) b.remove(); }, 30000);
+}
+
+function _applyNewVersion() {
+  var banner = document.getElementById('new-version-banner');
+  if (banner) banner.remove();
+  if (isDirty && !confirm('You have unsaved changes. Loading will discard them. Continue?')) return;
+  loadSharedData(() => { renderAll(); showToast('Loaded latest version'); });
+}
+
+// ── Save banner helpers ───────────────────────────────────────────────
+function setSyncStatus(s) {
+  var dot = document.getElementById('sync-dot'), txt = document.getElementById('sync-txt');
+  if (!dot || !txt) return;
+  dot.className = 'sync-dot ' + s;
+  txt.textContent = {ok:'Synced',saving:'Saving…',loading:'Loading…',local:'Local only',err:'Offline'}[s] || s;
+}
+
+function markDirty() { isDirty = true; updateUnsavedDot(); }
+function updateUnsavedDot() {
+  var d = document.getElementById('unsaved-dot');
+  if (d) d.style.display = isDirty ? 'inline-block' : 'none';
+}
+
+function _updateSaveTs(meta) {
+  var el = document.getElementById('save-ts');
+  if (el && meta) {
+    if (meta.author) el.style.display = 'none';
+    else { el.style.display = ''; el.textContent = 'Last saved: ' + (meta.tsLocal || meta.ts); }
+  }
+}
+
+function _updateSavedBy(meta) {
+  var el = document.getElementById('saved-by-display');
+  if (!el || !meta || !meta.author) return;
+  var initials = _initials(meta.author), color = meta.color || _userColor(meta.author);
+  el.style.display = 'flex';
+  el.innerHTML = '<div class="saved-by-avatar" style="background:' + color + '">' + initials + '</div>'
+    + ' Saved by <strong style="margin:0 3px;color:rgba(255,255,255,.9)">' + meta.author + '</strong>'
+    + '<span style="color:rgba(255,255,255,.5)">— ' + (meta.tsLocal || '') + '</span>';
+  var tsEl = document.getElementById('save-ts');
+  if (tsEl) tsEl.style.display = 'none';
+}
+
+// ── Activity log ──────────────────────────────────────────────────────
+function _saveActivity(meta) {
+  var saLabel = SA_SELECTED.has('ALL') || SA_SELECTED.size === 0 ? 'All' : [...SA_SELECTED].join(', ');
+  var entry = { author: meta.author, ts: meta.ts, tsLocal: meta.tsLocal, color: meta.color,
+                filters: 'SA: ' + saLabel + ' | Currency: $' + CURRENCY + ' | Rows: ' + ALL_ROWS.length.toLocaleString() };
+  cachedActivity.unshift(entry);
+  if (cachedActivity.length > MAX_ACTIVITY) cachedActivity = cachedActivity.slice(0, MAX_ACTIVITY);
+  localStorage.setItem(SK.activity, JSON.stringify(cachedActivity));
+  if (GH._actId) _ghWrite(GH._actId, GH.actFile, cachedActivity).catch(() => {});
+}
+
+function showActivityLog() {
+  try { cachedActivity = JSON.parse(localStorage.getItem(SK.activity) || '[]'); } catch(e) { cachedActivity = []; }
+  var content = document.getElementById('act-log-content');
+  if (!content) return;
+  if (!cachedActivity.length) {
+    content.innerHTML = '<div style="text-align:center;padding:30px;color:var(--g600);font-size:12px">No saves recorded yet.</div>';
+  } else {
+    content.innerHTML = cachedActivity.map((e, i) => {
+      var initials = _initials(e.author), color = e.color || _userColor(e.author);
+      return '<div class="act-item">'
+        + '<div class="act-avatar" style="background:' + color + '">' + initials + '</div>'
+        + '<div style="flex:1;min-width:0">'
+        + '<div class="act-author">' + (i===0?'🌟 ':'') + (e.author||'Anonymous') + (i===0?' <span style="font-size:10px;color:var(--green)">(latest)</span>':'') + '</div>'
+        + '<div class="act-time">' + (e.tsLocal||e.ts) + '</div>'
+        + '<div class="act-filters" title="' + e.filters + '">' + e.filters + '</div>'
+        + '</div></div>';
+    }).join('');
+  }
+  document.getElementById('act-modal-ov').classList.add('open');
+  // Also load from Gist if possible
+  if (GH._actId) {
+    _ghRead(GH._actId, GH.actFile).then(data => {
+      if (Array.isArray(data) && data.length) { cachedActivity = data; showActivityLog(); }
+    }).catch(() => {});
+  }
+}
+
+function closeActivityLog() {
+  document.getElementById('act-modal-ov').classList.remove('open');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function showToast(msg, icon) {
+  var t = document.getElementById('sar-toast');
+  if (!t) {
+    t = document.createElement('div'); t.id = 'sar-toast';
+    t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--g800);border:1px solid var(--g700);'
+      + 'color:white;padding:10px 18px;border-radius:8px;font-size:12px;font-weight:500;'
+      + 'z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.4);transition:opacity .3s;display:none;'
+      + 'display:flex;align-items:center;gap:8px;max-width:340px';
+    document.body.appendChild(t);
+  }
+  t.innerHTML = (icon ? '<span style="font-size:16px">' + icon + '</span>' : '') + '<span>' + msg + '</span>';
+  t.style.opacity = '1'; t.style.display = 'flex';
+  clearTimeout(t._to);
+  t._to = setTimeout(() => { t.style.opacity='0'; setTimeout(()=>{ t.style.display='none'; }, 300); }, 3200);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+initUserIdentity();
+// Always load shared state on open — shows saved Excel data immediately without re-uploading
+loadSharedData(() => { renderAll(); });
+</script>
+</body>
+</html>
