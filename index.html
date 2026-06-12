@@ -248,9 +248,8 @@ td[contenteditable="true"]:focus{background:#fffde7!important;border-bottom:1px 
     <div class="ctrl-group">
       <span class="ctrl-label">Display</span>
       <div class="toggle-group">
-        <button class="toggle-btn" onclick="setCurrency('M')">$ Millions</button>
-        <button class="toggle-btn active" onclick="setCurrency('K')">$ Thousands</button>
-        <button class="toggle-btn" onclick="setCurrency('A')">$ Absolute</button>
+        <button class="toggle-btn active" onclick="setCurrency('M')">$M (Millions)</button>
+        <button class="toggle-btn" onclick="setCurrency('A')">$A (Absolutes)</button>
       </div>
     </div>
     <div class="divider"></div>
@@ -421,7 +420,7 @@ td[contenteditable="true"]:focus{background:#fffde7!important;border-bottom:1px 
 // ═══════════════════════════════════════════════════════════════
 let ALL_ROWS = [];      // raw ITS rows
 let FTE_ROWS = [];      // raw FTE rows (PxE only)
-let CURRENCY = 'K';    // M | K | A
+let CURRENCY = 'M';    // M | A
 let CHARTS = {};
 let FILE_META = { name: '', fy: '', period: '' };
 let VAR_COMMENTARY = {}; // { accountGroup: 'commentary text' } — parsed from Excel or editable
@@ -607,86 +606,129 @@ function parseFTE(wb) {
 
 function str(v) { return v == null ? '' : String(v).trim(); }
 
-// Parse variance commentary from Excel
-// Looks for sheets containing 'Template', 'Variance', 'Commentary', or 'YTD'
-// Expected columns: Account Group, Account Subgroup, Service Area, Variance to Plan Commentary
-// Key structure: "AcctGroup|AcctSubgroup|ServiceArea" -> commentary text
-// Also stores "AcctGroup|AcctSubgroup" and "AcctGroup" as fallback keys
+// ─── parseVarCommentary ────────────────────────────────────────────────────
+// Reads the "Variance comments" sheet which has this layout (confirmed from source Excel):
+//   Row 3 : header  → col0=Service Area | col1=Account Group | col2=Account Subgroup | col3=Commentary
+//   Data rows: SA and AG are only populated on the FIRST row of each block (merged-cell pattern).
+//              All subsequent rows in that block have null for SA/AG → carry-forward required.
+//              Commentary "(blank)" means no comment.
+//
+// Keys stored:  "SA|AG|SG"  — using the exact strings as they appear in THIS sheet
+//               (AG/SG names here differ from ITS Report Data — see normalization in getCommentary)
 function parseVarCommentary(wb) {
   const commentary = {};
-  // Search all sheets for variance commentary data
-  const candidateSheets = Object.keys(wb.Sheets).filter(n => {
-    const nl = n.toLowerCase();
-    return nl.includes('template') || nl.includes('variance') || nl.includes('commentary') || nl.includes('ytd');
-  });
-  // Also check ALL sheets as fallback
-  const sheetsToCheck = candidateSheets.length > 0 ? candidateSheets : Object.keys(wb.Sheets);
 
-  for (const sheetName of sheetsToCheck) {
-    const ws = wb.Sheets[sheetName];
-    if (!ws) continue;
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-    if (!raw || raw.length < 2) continue;
+  // Exact sheet name first, then fuzzy fallback
+  const allSheets = Object.keys(wb.Sheets);
+  const sheetName = allSheets.find(n => n.toLowerCase() === 'variance comments')
+    || allSheets.find(n => n.toLowerCase().includes('variance') && n.toLowerCase().includes('comment'))
+    || allSheets.find(n => n.toLowerCase().includes('variance'))
+    || null;
+  if (!sheetName) return commentary;
 
-    // Find header row — look for row containing both 'Account Group' and commentary-like column
-    let hdrIdx = -1, cols = {};
-    for (let i = 0; i < Math.min(raw.length, 15); i++) {
-      const row = raw[i];
-      if (!row) continue;
-      const rowStr = row.map(c => String(c||'').toLowerCase());
-      const hasAG   = rowStr.some(c => c.includes('account group'));
-      const hasCom  = rowStr.some(c => c.includes('comment') || c.includes('textual') || c.includes('narrative'));
-      if (hasAG && hasCom) {
-        hdrIdx = i;
-        row.forEach((h, j) => {
-          const hl = String(h||'').toLowerCase().trim();
-          if (hl.includes('account group') && !hl.includes('sub')) cols.ag = j;
-          if (hl.includes('subgroup') || hl.includes('sub group'))  cols.sg = j;
-          if (hl.includes('service area'))                           cols.sa = j;
-          if (hl.includes('comment') || hl.includes('textual') || hl.includes('narrative')) cols.cmt = j;
-        });
-        break;
-      }
-    }
-    if (hdrIdx < 0 || cols.cmt === undefined) continue;
+  const ws = wb.Sheets[sheetName];
+  if (!ws) return commentary;
 
-    // Parse data rows
-    for (let i = hdrIdx + 1; i < raw.length; i++) {
-      const row = raw[i];
-      if (!row) continue;
-      const ag  = String(row[cols.ag]  || '').trim();
-      const sg  = cols.sg !== undefined ? String(row[cols.sg] || '').trim() : '';
-      const sa  = cols.sa !== undefined ? String(row[cols.sa] || '').trim() : '';
-      const cmt = String(row[cols.cmt] || '').trim();
-      if (!ag || !cmt) continue;
-      // Store with multiple key granularities for lookup
-      const fullKey  = `${ag}|${sg}|${sa}`;
-      const sgKey    = `${ag}|${sg}`;
-      const agKey    = ag;
-      commentary[fullKey] = cmt;
-      if (!commentary[sgKey])  commentary[sgKey] = cmt;
-      if (!commentary[agKey])  commentary[agKey] = cmt;
-    }
-    if (Object.keys(commentary).length > 0) break; // found data, stop searching
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (!raw || raw.length < 2) return commentary;
+
+  // Find header row: first row where col0 is exactly "Service Area"
+  let hdrIdx = -1;
+  for (let i = 0; i < Math.min(raw.length, 10); i++) {
+    if (raw[i] && String(raw[i][0] || '').trim() === 'Service Area') { hdrIdx = i; break; }
   }
+  if (hdrIdx < 0) return commentary;
+
+  // Columns are fixed: 0=SA, 1=AG, 2=SG, 3=Commentary
+  let lastSA = '', lastAG = '';
+
+  for (let i = hdrIdx + 1; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row) continue;
+
+    const saRaw  = String(row[0] || '').trim();
+    const agRaw  = String(row[1] || '').trim();
+    const sgRaw  = String(row[2] || '').trim();
+    const cmtRaw = String(row[3] || '').trim();
+
+    // Carry-forward SA and AG across merged cells (null = same as previous row)
+    if (saRaw && saRaw !== '(blank)') lastSA = saRaw;
+    if (agRaw && agRaw !== '(blank)') lastAG = agRaw;
+
+    const sa  = lastSA;
+    const ag  = lastAG;
+    const sg  = sgRaw;
+
+    // Skip grand-total / blank sentinel rows and the header values themselves
+    if (!sg || sg === '(blank)' || sg === 'Account Subgroup') continue;
+    if (sa === 'Grand Total' || sa === '(blank)') continue;
+
+    // "(blank)" commentary → store empty string (no comment to show)
+    const cmt = cmtRaw === '(blank)' ? '' : cmtRaw;
+
+    // Primary key: all three dimensions
+    commentary[`${sa}|${ag}|${sg}`] = cmt;
+  }
+
   return commentary;
 }
 
-// Helper to look up commentary with fallback chain:
-// Full key (AG|SG|SA) -> Subgroup key (AG|SG) -> Account Group key (AG)
-// Returns current SA filter as string for commentary lookup
+// ─── getCommentary ────────────────────────────────────────────────────────────
+// Looks up commentary for a row from the ITS Report Data using its AG and SG values.
+//
+// PROBLEM: The Variance comments sheet uses DIFFERENT AG/SG groupings than ITS Report Data:
+//
+//   ITS Report Data AG         ITS SG                  → Variance Comments AG    Variance Comments SG
+//   ──────────────────────────────────────────────────────────────────────────────────────────────────
+//   Recoveries                 Computer Recoveries     → Computers               Computer Recoveries
+//   Recoveries                 OPS Recoveries          → Outside Prof. Services  OPS Recoveries
+//   Recoveries                 Other Recoveries        → Other Costs             Other Recoveries
+//   Travel, Meetings &Ent.     Travel                  → Other Costs             Travel
+//   Travel, Meetings &Ent.     Meetings                → Other Costs             Meetings
+//   Travel, Meetings &Ent.     Entertainment           → Other Costs             Entertainment
+//   Other Costs                Other Expenses          → Other Costs             ITS Other Costs
+//   Internal Labor             Internal Labor          → Internal Labor          ITS Labor  (same as ITS Labor SG)
+//
+// Solution: normalize ITS AG+SG → Variance Comments AG+SG before lookup.
+function getCommentary(itsAG, itsSG, sa) {
+  if (!VAR_COMMENTARY) return '';
+
+  // Normalization map: [itsAG, itsSG] → [vcAG, vcSG]
+  // Keys are "itsAG|itsSG", values are [vcAG, vcSG]
+  const NORM = {
+    'Recoveries|Computer Recoveries':          ['Computers',              'Computer Recoveries'],
+    'Recoveries|OPS Recoveries':               ['Outside Prof. Services', 'OPS Recoveries'],
+    'Recoveries|Other Recoveries':             ['Other Costs',            'Other Recoveries'],
+    'Travel, Meetings & Entertainment|Travel': ['Other Costs',            'Travel'],
+    'Travel, Meetings & Entertainment|Meetings':['Other Costs',           'Meetings'],
+    'Travel, Meetings & Entertainment|Entertainment':['Other Costs',      'Entertainment'],
+    'Other Costs|Other Expenses':              ['Other Costs',            'ITS Other Costs'],
+    'Internal Labor|Internal Labor':           ['Internal Labor',         'ITS Labor'],
+  };
+
+  const normKey = `${itsAG}|${itsSG}`;
+  const [vcAG, vcSG] = NORM[normKey] || [itsAG, itsSG];
+
+  // Try with SA first (specific), then without SA (fallback when All selected)
+  if (sa) {
+    const v = VAR_COMMENTARY[`${sa}|${vcAG}|${vcSG}`];
+    if (v !== undefined) return v;
+  }
+  // Fallback: try each SA in the parsed commentary for this AG|SG
+  for (const key of Object.keys(VAR_COMMENTARY)) {
+    const parts = key.split('|');
+    if (parts.length === 3 && parts[1] === vcAG && parts[2] === vcSG) {
+      return VAR_COMMENTARY[key];
+    }
+  }
+  return '';
+}
+
+// Returns the currently-selected Service Area as a string (empty = All selected)
 function SA_FILTER_STR() {
   if (!SA_SELECTED || SA_SELECTED.has('ALL') || SA_SELECTED.size === 0) return '';
   const arr = [...SA_SELECTED];
   return arr.length === 1 ? arr[0] : '';
-}
-
-function getCommentary(ag, sg, sa) {
-  if (!VAR_COMMENTARY) return '';
-  return VAR_COMMENTARY[`${ag}|${sg}|${sa}`]
-      || VAR_COMMENTARY[`${ag}|${sg}`]
-      || VAR_COMMENTARY[ag]
-      || '';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -806,7 +848,7 @@ function filteredRows() {
 function setCurrency(mode) {
   CURRENCY = mode;
   document.querySelectorAll('.toggle-btn').forEach((b, i) => {
-    b.classList.toggle('active', ['M','K','A'][i] === mode);
+    b.classList.toggle('active', ['M','A'][i] === mode);
   });
   renderAll();
 }
@@ -816,11 +858,6 @@ function fmt(v) {
   const abs = Math.abs(v), sign = v < 0 ? '-' : '';
   if (CURRENCY === 'M') {
     if (abs >= 1e6) return sign + '$' + (abs/1e6).toFixed(2) + 'M';
-    if (abs >= 1e3) return sign + '$' + (abs/1e3).toFixed(1) + 'K';
-    return sign + '$' + abs.toFixed(0);
-  }
-  if (CURRENCY === 'K') {
-    if (abs >= 1e6) return sign + '$' + (abs/1e6).toFixed(1) + 'M';
     if (abs >= 1e3) return sign + '$' + (abs/1e3).toFixed(1) + 'K';
     return sign + '$' + abs.toFixed(0);
   }
@@ -1525,7 +1562,7 @@ function restoreUploadedData(){
 
     FTE_ROWS       = JSON.parse(localStorage.getItem(LS.ftePack)||'[]')||[];
     VAR_COMMENTARY = JSON.parse(localStorage.getItem(LS.varCmt) ||'{}')||{};
-    CURRENCY       = localStorage.getItem(LS.currency)||'K';
+    CURRENCY       = localStorage.getItem(LS.currency)||'M';
     FILE_META      = JSON.parse(localStorage.getItem(LS.fileMeta)||'{}')||FILE_META;
     cachedActivity = JSON.parse(localStorage.getItem(LS.activity)||'[]')||[];
     var saArr      = JSON.parse(localStorage.getItem(LS.saSet)||'["ALL"]');
@@ -1539,7 +1576,7 @@ function restoreUploadedData(){
       if(ac){ ac.checked=false; ac.indeterminate=true; }
     }
     document.querySelectorAll('.toggle-btn')
-      .forEach(function(b,i){ b.classList.toggle('active',['M','K','A'][i]===CURRENCY); });
+      .forEach(function(b,i){ b.classList.toggle('active',['M','A'][i]===CURRENCY); });
     document.getElementById('badge-period').style.display='';
     document.getElementById('badge-fy').style.display='';
     document.getElementById('upload-btn').textContent='↑ Load New File';
@@ -1596,7 +1633,7 @@ function _applyGHState(rowData, metaData){
     if(metaData){
       FTE_ROWS       = metaData.fteRows       || [];
       VAR_COMMENTARY = metaData.varCommentary || {};
-      CURRENCY       = metaData.currency      || 'K';
+      CURRENCY       = metaData.currency      || 'M';
       FILE_META      = metaData.fileMeta      || FILE_META;
       if(Array.isArray(metaData.activity)) cachedActivity=metaData.activity;
       var saArr=metaData.saSelected||['ALL'];
@@ -1609,7 +1646,7 @@ function _applyGHState(rowData, metaData){
         if(ac){ ac.checked=false; ac.indeterminate=true; }
       }
       document.querySelectorAll('.toggle-btn')
-        .forEach(function(b,i){ b.classList.toggle('active',['M','K','A'][i]===CURRENCY); });
+        .forEach(function(b,i){ b.classList.toggle('active',['M','A'][i]===CURRENCY); });
       if(metaData.meta){ _updateSaveTs(metaData.meta); _updateSavedBy(metaData.meta); _lastSavedTs=metaData.meta.ts||''; }
     }
     document.getElementById('badge-period').style.display='';
